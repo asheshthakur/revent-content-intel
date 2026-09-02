@@ -48,10 +48,31 @@ st.markdown(
         margin-bottom: 1.5rem;
     }}
     .stMetric {{
-        background-color: #f8f9fa;
-        border: 1px solid #e9ecef;
-        border-radius: 8px;
-        padding: 10px 14px;
+        background-color: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 10px;
+        padding: 12px 16px;
+    }}
+    .stMetric label {{
+        color: rgba(255, 255, 255, 0.85) !important;
+        font-weight: 600 !important;
+        font-size: 0.95rem !important;
+    }}
+    .stMetric [data-testid="stMetricValue"] {{
+        color: #ffffff !important;
+        font-weight: 700 !important;
+    }}
+    @media (prefers-color-scheme: light) {{
+        .stMetric {{
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+        }}
+        .stMetric label {{
+            color: #495057 !important;
+        }}
+        .stMetric [data-testid="stMetricValue"] {{
+            color: #212529 !important;
+        }}
     }}
     </style>
     """,
