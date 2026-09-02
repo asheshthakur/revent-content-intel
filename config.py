@@ -12,14 +12,13 @@ OUR_SOCIALS: Dict[str, str] = {
     "Instagram": "https://www.instagram.com/revent.uae/",
     "YouTube":   "https://www.youtube.com/@revent",
     "LinkedIn":  "https://www.linkedin.com/company/revent-fzco/",
-    "X":         "https://x.com/Revent_Lab",
 }
 
 # ── Competitor profiles ──────────────────────────────────────────────
 COMPETITORS: Dict[str, Dict[str, str]] = {
     "Implement AI": {
-        "LinkedIn": "https://www.linkedin.com/company/implement-ai/",
-        "X":        "https://x.com/ImplementAI_",
+        "LinkedIn": "https://www.linkedin.com/company/implement-ai",
+        "X":        "https://x.com/ImplementAI",
     },
     "Anvenssa AI": {
         "LinkedIn":  "https://www.linkedin.com/company/agentflowwai/",
@@ -32,22 +31,22 @@ COMPETITORS: Dict[str, Dict[str, str]] = {
     "Lucidya": {
         "LinkedIn":  "https://www.linkedin.com/company/lucidya/",
         "X":         "https://x.com/lucidyaai",
-        "Instagram": "https://www.instagram.com/lucidyaai/",
+        "Instagram": "https://www.instagram.com/lucidyaai",
     },
     "Dataiku": {
         "LinkedIn":  "https://www.linkedin.com/company/dataiku/",
         "X":         "https://x.com/dataiku",
-        "Instagram": "https://www.instagram.com/dataiku/",
+        "Instagram": "https://www.instagram.com/dataiku",
     },
     "Ahrefs": {
-        "LinkedIn":  "https://www.linkedin.com/company/ahrefs/",
+        "LinkedIn":  "https://www.linkedin.com/company/ahrefs",
         "X":         "https://x.com/ahrefs",
-        "Instagram": "https://www.instagram.com/ahrefs/",
+        "Instagram": "https://www.instagram.com/ahrefs",
     },
     "Semrush": {
         "LinkedIn":  "https://www.linkedin.com/company/semrush/",
         "X":         "https://x.com/semrush",
-        "Instagram": "https://www.instagram.com/semrush/",
+        "Instagram": "https://www.instagram.com/semrush",
     },
 }
 

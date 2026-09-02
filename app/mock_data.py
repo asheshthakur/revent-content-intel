@@ -15,13 +15,12 @@ def generate_seed_snapshots(days: int = 90) -> List[Dict]:
     snapshots = []
     base_date = date.today()
 
-    # Revent baseline metrics
+    # Revent baseline metrics (exact numbers from user)
     revent_base = {
-        "LinkedIn": {"followers": 1420, "growth": 4, "likes": 38, "comments": 6, "shares": 3},
-        "Instagram": {"followers": 2850, "growth": 8, "likes": 115, "comments": 14, "shares": 5},
-        "X": {"followers": 960, "growth": 3, "likes": 22, "comments": 4, "shares": 6},
-        "Facebook": {"followers": 1100, "growth": 2, "likes": 18, "comments": 2, "shares": 1},
-        "YouTube": {"followers": 650, "growth": 5, "likes": 45, "comments": 8, "shares": 0},
+        "LinkedIn":  {"followers": 2415, "growth": 4, "likes": 38, "comments": 6, "shares": 3},
+        "Instagram": {"followers": 759,  "growth": 3, "likes": 28, "comments": 5, "shares": 2},
+        "Facebook":  {"followers": 319,  "growth": 1, "likes": 12, "comments": 2, "shares": 1},
+        "YouTube":   {"followers": 336,  "growth": 2, "likes": 24, "comments": 4, "shares": 0},
     }
 
     # Competitor baseline metrics
