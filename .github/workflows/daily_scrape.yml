@@ -1,0 +1,40 @@
+name: Daily Content Intelligence Scraper
+
+on:
+  schedule:
+    # Runs at 04:00 UTC every day (= 08:00 AM Gulf Standard Time / GST)
+    - cron: '0 4 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+jobs:
+  scrape-and-update:
+    name: Run Daily Social & Trend Scraper
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright System Dependencies & Chromium
+        run: |
+          playwright install chromium --with-deps
+
+      - name: Run Daily Scraper Pipeline
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python run_scraper.py
