@@ -19,6 +19,8 @@ from app.tab_our_analytics import render_tab_our_analytics
 from app.tab_trends_content import render_tab_trends_content
 from app.tab_competitor import render_tab_competitor
 from app.db import read_scrape_log, is_supabase_configured
+from app.local_storage import get_last_successful_scrape
+from app.alerting import alert_stale_data
 import config
 
 # ── Streamlit Page Configuration ──────────────────────────────────────
@@ -135,6 +137,35 @@ def main():
             "<div class='sub-header'>UAE • KSA • Egypt — Content Intelligence & Competitor Radar</div>",
             unsafe_allow_html=True
         )
+
+    # ── Stale Data Check & UI Warning Banner (> 48h) ─────────────────
+    from datetime import datetime, timezone
+    last_scrape_dt = get_last_successful_scrape()
+    now_utc = datetime.now(timezone.utc)
+
+    if last_scrape_dt:
+        if last_scrape_dt.tzinfo is None:
+            last_scrape_dt = last_scrape_dt.replace(tzinfo=timezone.utc)
+        hours_old = (now_utc - last_scrape_dt).total_seconds() / 3600.0
+        if hours_old > config.STALE_DATA_THRESHOLD_HOURS:
+            st.warning(
+                f"⚠️ **STALE DATA WARNING**: Latest snapshot metrics were collected {hours_old:.1f} hours ago "
+                f"(last successful scrape: {last_scrape_dt.strftime('%Y-%m-%d %H:%M UTC')}). "
+                f"Scheduled daily scrape may be delayed or experiencing errors.",
+                icon="⚠️"
+            )
+            # Send alert email once per session if stale
+            if not st.session_state.get("stale_alert_sent", False):
+                alert_stale_data(last_scrape_dt, hours_old)
+                st.session_state["stale_alert_sent"] = True
+    else:
+        # Check Supabase scrape_log as secondary source
+        try:
+            logs = read_scrape_log(days=3)
+            if not logs:
+                st.info("ℹ️ Initializing metrics pipeline. Trigger a scrape run or wait for the scheduled daily cron at 08:00 GST.")
+        except Exception:
+            pass
 
     # 3. Sidebar Controls
     with st.sidebar:

@@ -183,3 +183,16 @@ PYTRENDS_GEO: List[str] = ["AE", "SA", "EG"]   # UAE, KSA, Egypt
 BRAND_NAME: str = "Revent AI Lab"
 BRAND_COLOR: str = "#6C3CE1"          # primary purple
 BRAND_COLOR_SECONDARY: str = "#00D4AA" # accent teal
+
+# ── Local SQLite Storage & Rate Limiting ─────────────────────────────
+SQLITE_DB_PATH: str = "data/trend_history.db"
+SCRAPE_RATE_LIMIT_HOURS: int = 24
+STALE_DATA_THRESHOLD_HOURS: int = 48
+
+# ── Alerting & Notifications ─────────────────────────────────────────
+ALERT_RECIPIENTS: List[str] = [
+    "work.asheshthakur@gmail.com",
+    "intern_ops@revent.store",
+]
+SMTP_SERVER: str = "smtp.gmail.com"
+SMTP_PORT: int = 587

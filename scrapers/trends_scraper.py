@@ -176,12 +176,86 @@ def scrape_youtube_search(keywords: List[str]) -> List[Dict]:
     return results
 
 
+def _get_reddit_client():
+    """Attempt to instantiate a PRAW Reddit client from secrets or environment."""
+    import streamlit as st
+    client_id = None
+    client_secret = None
+    user_agent = None
+    
+    try:
+        client_id = st.secrets.get("reddit_client_id") or st.secrets.get("REDDIT_CLIENT_ID")
+        client_secret = st.secrets.get("reddit_client_secret") or st.secrets.get("REDDIT_CLIENT_SECRET")
+        user_agent = st.secrets.get("reddit_user_agent") or st.secrets.get("REDDIT_USER_AGENT")
+    except Exception:
+        pass
+
+    if not client_id:
+        client_id = os.environ.get("REDDIT_CLIENT_ID") or os.environ.get("reddit_client_id")
+        client_secret = os.environ.get("REDDIT_CLIENT_SECRET") or os.environ.get("reddit_client_secret")
+        user_agent = os.environ.get("REDDIT_USER_AGENT") or os.environ.get("reddit_user_agent")
+
+    if client_id and client_secret:
+        try:
+            import praw
+            return praw.Reddit(
+                client_id=client_id,
+                client_secret=client_secret,
+                user_agent=user_agent or "revent-content-intel:v1.0 (by /u/revent_intel)",
+                check_for_async=False
+            )
+        except Exception as e:
+            logger.warning(f"[Reddit PRAW] Initialization failed: {e}")
+    return None
+
+
 def scrape_reddit(keywords: List[str], subreddits: List[str]) -> List[Dict]:
     """
-    Search Reddit's public JSON endpoints for keyword mentions.
-    Uses the .json suffix on subreddit search URLs.
+    Search Reddit for niche keywords across target subreddits.
+    1. Uses official Reddit API via PRAW if client_id/secret are configured in Streamlit secrets.
+    2. Gracefully falls back to public JSON endpoints with rate-limit handling.
     """
+    reddit_client = _get_reddit_client()
     results = []
+
+    # ── Strategy 1: Official Reddit API via PRAW ──────────────────
+    if reddit_client:
+        logger.info("[Reddit] Using official Reddit API via PRAW client")
+        for sub_name in subreddits:
+            try:
+                sub = reddit_client.subreddit(sub_name)
+                for kw in keywords:
+                    try:
+                        # Search top recent posts in subreddit
+                        search_posts = list(sub.search(query=kw, sort="new", time_filter="week", limit=5))
+                        for post in search_posts:
+                            score = max(0, int(getattr(post, "score", 0)))
+                            results.append({
+                                "keyword": kw,
+                                "source": "reddit",
+                                "score": min(100, score),
+                                "title": getattr(post, "title", ""),
+                                "url": f"https://reddit.com{getattr(post, 'permalink', '')}",
+                                "metadata": {
+                                    "subreddit": sub_name,
+                                    "score": score,
+                                    "num_comments": getattr(post, "num_comments", 0),
+                                    "created_utc": getattr(post, "created_utc", None),
+                                    "author": str(getattr(post, "author", "")),
+                                    "via": "praw_api"
+                                },
+                            })
+                        time.sleep(random.uniform(0.5, 1.2))
+                    except Exception as e:
+                        logger.warning(f"[Reddit PRAW] Error searching r/{sub_name} for '{kw}': {e}")
+            except Exception as e:
+                logger.warning(f"[Reddit PRAW] Error accessing r/{sub_name}: {e}")
+        if results:
+            logger.info(f"[Reddit PRAW] Harvested {len(results)} signals via PRAW")
+            return results
+
+    # ── Strategy 2: Public JSON Endpoints Fallback ────────────────
+    logger.info("[Reddit] PRAW not configured or returned empty. Using public JSON endpoint fallback.")
     headers = {"User-Agent": random.choice(USER_AGENTS)}
 
     for sub in subreddits:
@@ -195,7 +269,7 @@ def scrape_reddit(keywords: List[str], subreddits: List[str]) -> List[Dict]:
 
                 if resp.status_code == 429:
                     logger.warning("[Reddit] Rate limited, backing off")
-                    time.sleep(30)
+                    time.sleep(15)
                     continue
 
                 if resp.status_code != 200:
@@ -218,10 +292,11 @@ def scrape_reddit(keywords: List[str], subreddits: List[str]) -> List[Dict]:
                             "score": score,
                             "num_comments": pdata.get("num_comments", 0),
                             "created_utc": pdata.get("created_utc"),
+                            "via": "public_json"
                         },
                     })
 
-                time.sleep(random.uniform(2, 5))
+                time.sleep(random.uniform(1.5, 3.5))
 
             except Exception as e:
                 logger.warning(f"[Reddit] Error for r/{sub} + '{kw}': {e}")

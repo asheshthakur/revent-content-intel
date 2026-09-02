@@ -41,5 +41,9 @@ Thumbs.db
 # Local SQLite databases or test data
 local_cache.db
 local_data/
+data/*.db
+data/*.sqlite3
 *.sqlite3
 *.db
+
+.agents/

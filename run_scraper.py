@@ -47,6 +47,22 @@ from app.db import (
     read_all_calendar,
     delete_old_calendar,
 )
+from app.local_storage import (
+    init_sqlite_db,
+    insert_social_metric,
+    insert_trend_metric,
+    insert_competitor_metric,
+    check_rate_limit,
+    record_scrape_success,
+    record_target_outcome,
+    get_repeated_failures,
+    export_backup_csvs,
+)
+from app.alerting import (
+    alert_scrape_target_failure,
+    alert_repeated_failures,
+    alert_stale_data,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -104,8 +120,24 @@ async def scrape_target(
         logger.error(f"Scraper crashed for [{platform}] {handle_url}: {e}")
 
     duration = time.time() - start_time
+    is_success = bool(result)
 
-    # Record execution log in Supabase
+    # 1. Update Failure Tracker & Trigger Alert on Failure
+    consecutive_fails = record_target_outcome(
+        target=handle_url,
+        platform=platform,
+        success=is_success,
+        error_msg=error_msg
+    )
+    if not is_success:
+        alert_scrape_target_failure(
+            platform=platform,
+            target_url=handle_url,
+            error_reason=error_msg,
+            retries_attempted=config.MAX_RETRIES
+        )
+
+    # 2. Record execution log in Supabase / Local
     try:
         insert_scrape_log({
             "date": date.today().isoformat(),
@@ -118,8 +150,23 @@ async def scrape_target(
     except Exception as log_err:
         logger.warning(f"Could not persist scrape log: {log_err}")
 
-    # If successful, write snapshot to social_snapshots
+    # 3. If successful, persist to both SQLite and Supabase
     if result:
+        # A) Insert into Local SQLite
+        now_ts = datetime.now(timezone.utc).isoformat()
+        if is_competitor:
+            comp_label = competitor_name or "Unknown Competitor"
+            insert_competitor_metric(comp_label, platform, handle_url, "followers", result.followers, now_ts)
+            insert_competitor_metric(comp_label, platform, handle_url, "likes_avg", result.likes_avg, now_ts)
+            insert_competitor_metric(comp_label, platform, handle_url, "engagement_rate", result.engagement_rate, now_ts)
+        else:
+            insert_social_metric(platform, handle_url, "followers", result.followers, now_ts)
+            insert_social_metric(platform, handle_url, "likes_avg", result.likes_avg, now_ts)
+            insert_social_metric(platform, handle_url, "comments_avg", result.comments_avg, now_ts)
+            insert_social_metric(platform, handle_url, "shares_avg", result.shares_avg, now_ts)
+            insert_social_metric(platform, handle_url, "engagement_rate", result.engagement_rate, now_ts)
+
+        # B) Upsert to Supabase
         snapshot_row = {
             "platform": platform,
             "handle": handle_url,
@@ -137,9 +184,9 @@ async def scrape_target(
         }
         try:
             upsert_snapshot(snapshot_row)
-            logger.info(f"✅ Saved snapshot for {platform} ({handle_url}) to Supabase")
+            logger.info(f"✅ Saved snapshot for {platform} ({handle_url}) to DB & SQLite")
         except Exception as db_err:
-            logger.error(f"Failed to save snapshot to DB: {db_err}")
+            logger.error(f"Failed to save snapshot to Supabase: {db_err}")
 
     return result
 
@@ -207,20 +254,39 @@ def run_trend_pipeline():
         today_str = date.today().isoformat()
 
         saved_count = 0
+        now_ts = datetime.now(timezone.utc).isoformat()
         for item in trend_items:
+            kw = item.get("keyword", "")
+            src = item.get("source", "")
+            sc = item.get("score", 0.0)
+            ttl = item.get("title", "")
+            u = item.get("url", "")
+
+            # Insert into local SQLite
+            insert_trend_metric(
+                keyword=kw,
+                source=src,
+                metric_name="trend_score",
+                value=sc,
+                title=ttl,
+                url=u,
+                ts=now_ts
+            )
+
+            # Insert into Supabase
             row = {
                 "date": today_str,
-                "keyword": item.get("keyword"),
-                "source": item.get("source"),
-                "score": item.get("score"),
-                "title": item.get("title"),
-                "url": item.get("url"),
+                "keyword": kw,
+                "source": src,
+                "score": sc,
+                "title": ttl,
+                "url": u,
                 "metadata": item.get("metadata", {}),
             }
             if insert_trend(row):
                 saved_count += 1
 
-        logger.info(f"✅ Successfully inserted {saved_count} trend snapshots")
+        logger.info(f"✅ Successfully inserted {saved_count} trend snapshots into Supabase & SQLite")
         return trend_items
     except Exception as e:
         logger.error(f"Trend pipeline failed: {e}")
@@ -267,11 +333,25 @@ def run_calendar_pipeline(trend_data: List[Dict]):
         logger.error(f"Calendar generation pipeline failed: {e}")
 
 
-async def main_pipeline():
+async def main_pipeline(force: bool = False):
+    """
+    Main scraping pipeline with 24-hour rate limiting guard and failure monitoring.
+    """
     logger.info("🚀 Starting Revent AI Lab Daily Scraping Pipeline")
+
+    # Rate limiting check (max once every 24 hours)
+    if not force:
+        can_run, hours_since_last = check_rate_limit(config.SCRAPE_RATE_LIMIT_HOURS)
+        if not can_run:
+            logger.info(
+                f"⏸️ Rate limit active: Last scrape completed {hours_since_last:.1f}h ago "
+                f"(threshold is {config.SCRAPE_RATE_LIMIT_HOURS}h). Serving cached/stored data."
+            )
+            return
+
     start_total = time.time()
 
-    # Step 1 & 2: Social Scrapes
+    # Step 1 & 2: Social Scrapes (Our Channels + Competitors)
     await run_social_scrapes()
 
     # Step 3: Trend Pipeline
@@ -280,9 +360,22 @@ async def main_pipeline():
     # Step 4: Content Calendar Pipeline
     run_calendar_pipeline(trend_data)
 
+    # Step 5: Check for repeated consecutive failures (2+ runs)
+    repeated_failures = get_repeated_failures(min_consecutive=2)
+    if repeated_failures:
+        logger.warning(f"⚠️ Detected {len(repeated_failures)} targets with 2+ consecutive failures. Sending alert email.")
+        alert_repeated_failures(repeated_failures)
+
+    # Step 6: Export CSV backups so history survives ephemeral app restarts
+    export_backup_csvs()
+
+    # Record successful scrape timestamp for 24h rate limiting
+    record_scrape_success()
+
     elapsed = time.time() - start_total
     logger.info(f"🏁 Daily Scraper Pipeline finished in {elapsed:.1f}s")
 
 
 if __name__ == "__main__":
-    asyncio.run(main_pipeline())
+    force_run = "--force" in sys.argv
+    asyncio.run(main_pipeline(force=force_run))

@@ -25,6 +25,39 @@ from config import NITTER_INSTANCES
 logger = logging.getLogger(__name__)
 
 
+import requests
+
+def check_nitter_health(instance_url: str, timeout: float = 4.0) -> bool:
+    """
+    Pings a Nitter instance to check if it's responsive and not dead/blocked.
+    Returns True if healthy, False if down.
+    """
+    try:
+        clean_url = instance_url.rstrip("/")
+        # Ping root or /about
+        resp = requests.get(clean_url, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"})
+        # Healthy if HTTP 200 or 302 and doesn't explicitly return error pages
+        if resp.status_code in [200, 301, 302]:
+            text = resp.text.lower()
+            if "rate limited" in text or "instance has been blocked" in text:
+                return False
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def get_healthy_nitter_instances(instances: List[str]) -> List[str]:
+    """Filter instance list returning only responsive ones."""
+    healthy = []
+    for inst in instances:
+        if check_nitter_health(inst):
+            healthy.append(inst)
+        else:
+            logger.info(f"[X] Skipping dead Nitter instance: {inst}")
+    return healthy
+
+
 class XScraper(BaseScraper):
     platform = "X"
 
@@ -35,8 +68,14 @@ class XScraper(BaseScraper):
         return parts[-1]
 
     async def _try_nitter(self, handle: str) -> Optional[ScraperResult]:
-        """Try scraping via Nitter instances (more reliable for public data)."""
-        for instance in NITTER_INSTANCES:
+        """Try scraping via Nitter instances, automatically health-checking first."""
+        # Healthcheck and filter active instances
+        active_instances = get_healthy_nitter_instances(NITTER_INSTANCES)
+        if not active_instances:
+            logger.warning("[X] No healthy Nitter instances found. Falling back to direct scrape.")
+            return None
+
+        for instance in active_instances:
             try:
                 nitter_url = f"{instance}/{handle}"
                 async with async_playwright() as pw:
