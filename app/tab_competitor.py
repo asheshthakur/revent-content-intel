@@ -37,43 +37,90 @@ def render_tab_competitor(days_filter: int):
         df["date"] = pd.to_datetime(df["date"]).dt.date
         df = df.sort_values(by="date")
 
-    # Available platforms
-    platforms_with_data = sorted(df["platform"].unique()) if not df.empty and "platform" in df.columns else list(config.OUR_SOCIALS.keys())
+    # ── Section 1: Audience Growth Comparison (Numeric Table & Cards) ──
+    st.markdown("### 📈 Audience Growth Comparison")
+    st.caption("Side-by-side growth numbers for Revent AI Lab and tracked competitors across platforms.")
+
+    all_platforms = ["LinkedIn", "Instagram", "X", "Facebook", "YouTube"]
     selected_platform = st.selectbox(
         "Select Platform for Competitor Benchmark:",
-        options=platforms_with_data,
+        options=all_platforms,
         index=0,
-        help="Select a platform to compare audience growth and engagement against competitors."
+        help="Select a platform to compare audience numbers against competitors."
     )
 
     plat_df = df[df["platform"] == selected_platform] if not df.empty and "platform" in df.columns else pd.DataFrame()
 
-    # ── Section 1: Combined Growth Chart ──────────────────────────
-    st.markdown("### 📈 Audience Growth Comparison")
     if not plat_df.empty:
-        # Toggle between Followers, Engagement Rate, and Likes
-        metric_choice = st.radio(
-            "Metric to Compare:",
-            options=["followers", "engagement_rate", "likes_avg"],
-            format_func=lambda m: {
-                "followers": "Follower / Subscriber Count",
-                "engagement_rate": "Engagement Rate (%)",
-                "likes_avg": "Average Likes per Post"
-            }[m],
-            horizontal=True
-        )
+        plat_df = plat_df.copy()
+        plat_df["entity"] = plat_df["competitor_name"].fillna("Revent AI Lab")
 
-        st.plotly_chart(
-            competitor_comparison_chart(
-                plat_df,
-                platform=selected_platform,
-                metric=metric_choice,
-                title=f"{selected_platform} — Revent AI Lab vs Competitors (Last {days_filter} Days)"
-            ),
-            use_container_width=True
+        rows = []
+        earliest_dates = []
+
+        for entity, grp in plat_df.groupby("entity"):
+            grp = grp.sort_values("date")
+            earliest_row = grp.iloc[0]
+            latest_row = grp.iloc[-1]
+
+            base_val = earliest_row.get("followers")
+            today_val = latest_row.get("followers")
+            b_date = earliest_row.get("date")
+            earliest_dates.append(b_date)
+
+            if pd.notna(base_val) and pd.notna(today_val):
+                net_change = int(today_val - base_val)
+                pct_growth = ((today_val - base_val) / max(base_val, 1)) * 100.0
+            else:
+                net_change = None
+                pct_growth = None
+
+            rows.append({
+                "Profile": entity,
+                "Is Revent": (entity == "Revent AI Lab"),
+                "Baseline Date": b_date,
+                "30 Days Ago": f"{base_val:,.0f}" if pd.notna(base_val) else "N/A",
+                "Today": f"{today_val:,.0f}" if pd.notna(today_val) else "N/A",
+                "Net Change": f"{net_change:+d}" if net_change is not None else "N/A",
+                "% Growth": f"{pct_growth:+.2f}%" if pct_growth is not None else "N/A",
+                "_raw_today": today_val or 0,
+                "_raw_net": net_change or 0,
+                "_raw_pct": pct_growth or 0.0,
+            })
+
+        # Sort with Revent AI Lab first, then by today's followers descending
+        growth_df = pd.DataFrame(rows)
+        growth_df = growth_df.sort_values(by=["Is Revent", "_raw_today"], ascending=[False, False])
+
+        # Baseline date note
+        unique_baseline_dates = sorted(set(d.isoformat() if hasattr(d, "isoformat") else str(d) for d in earliest_dates if d))
+        baseline_str = ", ".join(unique_baseline_dates) if unique_baseline_dates else "First recorded snapshot"
+        st.info(f"ℹ️ **Baseline:** {baseline_str} (earliest recorded snapshot in selected {days_filter}-day window)")
+
+        # Summary Metric Cards for top entities
+        st.markdown("#### 🔢 Key Profiles Overview")
+        top_profiles = growth_df.head(4)
+        cols = st.columns(len(top_profiles))
+        for idx, (_, r) in enumerate(top_profiles.iterrows()):
+            with cols[idx]:
+                st.metric(
+                    label=f"{r['Profile']} ({selected_platform})",
+                    value=r["Today"],
+                    delta=f"{r['Net Change']} ({r['% Growth']})",
+                )
+
+        # Full Numeric Comparison Table
+        st.markdown("#### 📋 Detailed Audience Growth Table")
+        display_df = growth_df[["Profile", "30 Days Ago", "Today", "Net Change", "% Growth"]].rename(
+            columns={"30 Days Ago": f"Baseline ({days_filter}d)"}
+        )
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            hide_index=True
         )
     else:
-        st.info(f"No benchmark snapshot history available for {selected_platform} in this date range.")
+        st.info(f"No snapshot history available for {selected_platform}. Data will appear once snapshots are recorded.")
 
     st.markdown("---")
 
@@ -87,11 +134,35 @@ def render_tab_competitor(days_filter: int):
         st.error(f"Error reading hashtag tracking: {e}")
         raw_hashtags = []
 
+    # If hashtag table has fewer than 2 competitors, extract directly from competitor snapshots' raw_data
+    if len(set(h.get("competitor_name") for h in raw_hashtags if h.get("competitor_name"))) < len(config.COMPETITORS):
+        from scrapers.hashtag_extractor import extract_hashtags_from_raw_data
+        comp_snaps = [s for s in all_snapshots if s.get("is_competitor") and s.get("competitor_name")]
+        for s in comp_snaps:
+            c_name = s.get("competitor_name")
+            rd = s.get("raw_data") or {}
+            if isinstance(rd, str):
+                try:
+                    rd = json.loads(rd)
+                except Exception:
+                    rd = {}
+            tag_counts = extract_hashtags_from_raw_data(rd)
+            for tag, count in tag_counts.items():
+                raw_hashtags.append({
+                    "date": s.get("date"),
+                    "handle": s.get("handle"),
+                    "platform": s.get("platform"),
+                    "competitor_name": c_name,
+                    "hashtag": tag,
+                    "frequency": count
+                })
+
     if raw_hashtags:
         ht_df = pd.DataFrame(raw_hashtags)
         c_filter, c_tbl = st.columns([1, 2])
         with c_filter:
-            competitors_in_ht = sorted(ht_df["competitor_name"].dropna().unique())
+            available_comps = list(config.COMPETITORS.keys())
+            competitors_in_ht = sorted(set(ht_df["competitor_name"].dropna().unique()).union(set(available_comps)))
             selected_comp = st.selectbox(
                 "Filter Hashtags by Competitor:",
                 options=["All Competitors"] + competitors_in_ht,
@@ -100,19 +171,22 @@ def render_tab_competitor(days_filter: int):
 
         with c_tbl:
             filtered_ht = ht_df if selected_comp == "All Competitors" else ht_df[ht_df["competitor_name"] == selected_comp]
-            agg_ht = (
-                filtered_ht.groupby("hashtag")["frequency"]
-                .sum()
-                .reset_index()
-                .sort_values(by="frequency", ascending=False)
-                .head(25)
-            )
-            agg_ht["hashtag"] = agg_ht["hashtag"].apply(lambda h: f"#{h}")
-            st.dataframe(
-                agg_ht.rename(columns={"hashtag": "Hashtag", "frequency": "Frequency Count"}),
-                use_container_width=True,
-                hide_index=True
-            )
+            if not filtered_ht.empty:
+                agg_ht = (
+                    filtered_ht.groupby("hashtag")["frequency"]
+                    .sum()
+                    .reset_index()
+                    .sort_values(by="frequency", ascending=False)
+                    .head(25)
+                )
+                agg_ht["hashtag"] = agg_ht["hashtag"].apply(lambda h: f"#{h}" if not h.startswith("#") else h)
+                st.dataframe(
+                    agg_ht.rename(columns={"hashtag": "Hashtag", "frequency": "Frequency Count"}),
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.info(f"No specific hashtags recorded for {selected_comp} yet.")
     else:
         st.info("No hashtag records found yet. Scraped competitor post captions will populate this table automatically.")
 

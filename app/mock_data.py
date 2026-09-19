@@ -139,32 +139,29 @@ def generate_seed_trends(days: int = 60) -> List[Dict]:
 
 
 def generate_seed_hashtags() -> List[Dict]:
-    """Generates competitor hashtag tracking records."""
-    hashtags_data = [
-        ("aiagents", 45),
-        ("agenticai", 38),
-        ("dubai", 32),
-        ("uae", 29),
-        ("automation", 27),
-        ("saas", 24),
-        ("businessai", 22),
-        ("sme", 19),
-        ("ksa", 16),
-        ("generativeai", 15),
-        ("productivity", 14),
-        ("workflowautomation", 12),
-        ("techdubai", 10),
-        ("egypt", 9),
-    ]
+    """Generates competitor hashtag tracking records across all 7 tracked competitors."""
+    competitor_tags = {
+        "Implement AI": [("aiagents", 45), ("agenticai", 38), ("automation", 27), ("b2b", 22), ("techdubai", 15), ("workflowautomation", 12)],
+        "Anvenssa AI": [("agentflow", 34), ("aiagents", 30), ("uaebusiness", 25), ("smartautomation", 19), ("aiplatform", 16)],
+        "Maqsam": [("cloudtelephony", 42), ("voiceai", 36), ("cxautomation", 29), ("ksa", 24), ("saudiarabia", 20), ("b2b", 18)],
+        "Lucidya": [("customerintelligence", 48), ("cx", 41), ("arabicnlp", 35), ("aiinsights", 28), ("ksa", 22), ("dubai", 17)],
+        "Dataiku": [("everydayai", 62), ("dataiku", 54), ("generativeai", 43), ("enterprisetech", 35), ("machinelearning", 29)],
+        "Ahrefs": [("seo", 75), ("contentmarketing", 58), ("digitalstrategy", 42), ("searchengine", 33), ("growthmarketing", 26)],
+        "Semrush": [("digitalmarketing", 82), ("contentstrategy", 64), ("marketresearch", 49), ("seoagency", 38), ("competitoranalysis", 31)],
+    }
     records = []
     today_str = date.today().isoformat()
-    for tag, freq in hashtags_data:
-        records.append({
-            "date": today_str,
-            "handle": "https://linkedin.com/company/implement-ai",
-            "platform": "LinkedIn",
-            "competitor_name": "Implement AI",
-            "hashtag": tag,
-            "frequency": freq
-        })
+    for comp_name, tag_list in competitor_tags.items():
+        comp_platforms = config.COMPETITORS.get(comp_name, {})
+        plat = list(comp_platforms.keys())[0] if comp_platforms else "LinkedIn"
+        h_url = list(comp_platforms.values())[0] if comp_platforms else "https://linkedin.com"
+        for tag, freq in tag_list:
+            records.append({
+                "date": today_str,
+                "handle": h_url,
+                "platform": plat,
+                "competitor_name": comp_name,
+                "hashtag": tag,
+                "frequency": freq
+            })
     return records

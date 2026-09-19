@@ -27,7 +27,7 @@ import config
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = config.SQLITE_DB_PATH
+DB_PATH = getattr(config, "SQLITE_DB_PATH", "data/trend_history.db")
 
 
 def get_db_connection() -> sqlite3.Connection:
